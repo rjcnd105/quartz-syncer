@@ -45,6 +45,8 @@ export class FrontmatterSettings extends PluginSettingTab {
 		this.initializeShowPublishedTimestampSetting();
 		this.initializePublishedTimestampKeysSetting();
 		this.initializeEnablePermalinkSetting();
+		this.initializeShowCustomFrontmatterSetting();
+		this.initializeCustomFrontmatterKeysSetting();
 		this.initializeIncludeAllFrontmatterSetting();
 
 		// Set defaults for users that upgraded instead of fresh install.
@@ -407,5 +409,63 @@ export class FrontmatterSettings extends PluginSettingTab {
 						await this.settings.plugin.saveSettings();
 					}),
 			);
+	}
+
+	/**
+	 * Initializes the setting to show the custom frontmatter in the note's properties.
+	 * This method allows users to include the custom frontmatter in the Quartz Syncer note's frontmatter.
+	 */
+	private initializeShowCustomFrontmatterSetting() {
+		if (!this.settings.settings.includeAllFrontmatter) {
+			new Setting(this.settingsRootElement)
+				.setName("Include custom frontmatter")
+				.setDesc(
+					"Include the custom frontmatter in your note's properties.",
+				)
+				.addToggle((toggle) =>
+					toggle
+						.setValue(this.settings.settings.showCustomFrontmatter)
+						.setDisabled(
+							this.settings.settings.includeAllFrontmatter,
+						)
+						.onChange(async (value) => {
+							this.settings.settings.showCustomFrontmatter =
+								value;
+							await this.settings.plugin.saveSettings();
+							this.display();
+						}),
+				);
+		}
+	}
+
+	/**
+	 * Initializes the setting to configure the custom frontmatter keys.
+	 * This method allows users to configure a comma-separated list of keys to look for to determine the custom frontmatter.
+	 */
+	private initializeCustomFrontmatterKeysSetting() {
+		if (
+			!this.settings.settings.includeAllFrontmatter &&
+			this.settings.settings.showCustomFrontmatter
+		) {
+			new Setting(this.settingsRootElement)
+				.setName("Custom frontmatter keys")
+				.setDesc(
+					"Comma-separated list of keys to look for to determine the custom frontmatter. By default, Quartz Syncer will look for 'custom', 'custom_frontmatter', and 'custom-frontmatter'.",
+				)
+				.addText((text) =>
+					text
+						.setPlaceholder(
+							"custom, custom_frontmatter, custom-frontmatter",
+						)
+						.setValue(this.settings.settings.customFrontmatterKey)
+						.setDisabled(
+							this.settings.settings.includeAllFrontmatter,
+						)
+						.onChange(async (value) => {
+							this.settings.settings.customFrontmatterKey = value;
+							await this.settings.plugin.saveSettings();
+						}),
+				);
+		}
 	}
 }

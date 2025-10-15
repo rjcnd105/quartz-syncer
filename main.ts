@@ -43,6 +43,7 @@ const DEFAULT_SETTINGS: QuartzSyncerSettings = {
 	showCreatedTimestamp: true,
 	showUpdatedTimestamp: true,
 	showPublishedTimestamp: false,
+	showCustomFrontmatter: false,
 	usePermalink: false,
 
 	includeAllFrontmatter: false,
@@ -57,6 +58,7 @@ const DEFAULT_SETTINGS: QuartzSyncerSettings = {
 	 */
 	createdTimestampKey: "created, created_at, date",
 	updatedTimestampKey: "modified, lastmod, updated, last-modified",
+	customFrontmatterKey: "",
 	publishedTimestampKey: "published, publishDate, date",
 	timestampFormat: "MMM dd, yyyy h:mm a",
 
