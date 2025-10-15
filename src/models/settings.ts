@@ -23,6 +23,7 @@ export default interface QuartzSyncerSettings {
 	showUpdatedTimestamp: boolean;
 	showPublishedTimestamp: boolean;
 	usePermalink: boolean;
+	showCustomFrontmatter: boolean;
 
 	includeAllFrontmatter: boolean;
 
@@ -36,6 +37,7 @@ export default interface QuartzSyncerSettings {
 	pathRewriteRules: string;
 	createdTimestampKey: string;
 	updatedTimestampKey: string;
+	customFrontmatterKey: string;
 	publishedTimestampKey: string;
 	timestampFormat: string;
 

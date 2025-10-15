@@ -44,6 +44,7 @@ const quartzSettings = {
 	publishedTimestampKey: "published",
 	timestampFormat: "MMM dd, yyyy h:mm a",
 
+
 	pathRewriteRules: `
 Path Rewriting/Subfolder2:fun-folder
 Path Rewriting:
@@ -52,6 +53,9 @@ Path Rewriting/Subfolder:this-will-never-hit`,
 	publishFrontmatterKey: "publish",
 	allNotesPublishableByDefault: false,
 	usePermalink: true,
+
+	includeCustomFrontmatter: false,
+	includeCustomFrontmatterKey: "",
 
 	lastUsedSettingsTab: "github",
 

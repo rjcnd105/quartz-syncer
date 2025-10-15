@@ -75,6 +75,11 @@ export class FrontmatterCompiler {
 			publishedFrontMatter,
 		);
 
+		publishedFrontMatter = this.addCustomFrontmatter(
+			fileFrontMatter,
+			publishedFrontMatter,
+		);
+
 		publishedFrontMatter = this.addTags(
 			fileFrontMatter,
 			publishedFrontMatter,
@@ -142,8 +147,9 @@ export class FrontmatterCompiler {
 					}
 
 					if (typeof baseFrontMatter["alias"] === "string") {
-						publishedFrontMatter["aliases"] +=
-							` ${baseFrontMatter["alias"]}`;
+						publishedFrontMatter[
+							"aliases"
+						] += ` ${baseFrontMatter["alias"]}`;
 					} else if (Array.isArray(baseFrontMatter["alias"])) {
 						publishedFrontMatter["aliases"] += ` ${baseFrontMatter[
 							"alias"
@@ -369,31 +375,62 @@ export class FrontmatterCompiler {
 
 			if (createdAt && (showCreatedTimestamp || overridden)) {
 				newFrontMatter["created"] = overridden
-					? (baseFrontMatter["created"] ??
-						baseFrontMatter["date"] ??
-						createdAt)
+					? baseFrontMatter["created"] ??
+					  baseFrontMatter["date"] ??
+					  createdAt
 					: createdAt;
 			}
 
 			if (updatedAt && (showUpdatedTimestamp || overridden)) {
 				newFrontMatter["modified"] = overridden
-					? (baseFrontMatter["modified"] ??
-						baseFrontMatter["lastmod"] ??
-						baseFrontMatter["updated"] ??
-						baseFrontMatter["last-modified"] ??
-						updatedAt)
+					? baseFrontMatter["modified"] ??
+					  baseFrontMatter["lastmod"] ??
+					  baseFrontMatter["updated"] ??
+					  baseFrontMatter["last-modified"] ??
+					  updatedAt
 					: updatedAt;
 			}
 
 			if (publishedAt && (showPublishedTimestamp || overridden)) {
 				newFrontMatter["published"] = overridden
-					? (baseFrontMatter["published"] ??
-						baseFrontMatter["publishDate"] ??
-						baseFrontMatter["date"] ??
-						publishedAt)
+					? baseFrontMatter["published"] ??
+					  baseFrontMatter["publishDate"] ??
+					  baseFrontMatter["date"] ??
+					  publishedAt
 					: publishedAt;
 			}
 
 			return newFrontMatter;
 		};
+
+	/**
+	 * Adds the custom frontmatter to the compiled frontmatter if specified in user settings.
+	 *
+	 * @param baseFrontMatter - The base frontmatter of the file.
+	 * @param newFrontMatter - The new frontmatter to be compiled.
+	 * @returns The new frontmatter with the timestamps added.
+	 */
+	private addCustomFrontmatter(
+		baseFrontMatter: TFrontmatter,
+		newFrontMatter: TPublishedFrontMatter,
+	) {
+		const { showCustomFrontmatter, customFrontmatterKey } = this.settings;
+
+		const overridden = this.settings.includeAllFrontmatter;
+
+		if (showCustomFrontmatter && !overridden) {
+			const keys = customFrontmatterKey.split(",");
+
+			for (const key of keys) {
+				const trimmedKey = key.trim();
+				const frontmatterValue = baseFrontMatter[trimmedKey];
+
+				if (frontmatterValue) {
+					newFrontMatter[trimmedKey] = frontmatterValue;
+				}
+			}
+		}
+
+		return newFrontMatter;
+	}
 }
