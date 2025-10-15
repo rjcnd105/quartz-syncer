@@ -47,8 +47,6 @@ export class FrontmatterSettings extends PluginSettingTab {
 		this.initializeShowCustomFrontmatterSetting();
 		this.initializeCustomFrontmatterKeysSetting();
 		this.initializeIncludeAllFrontmatterSetting();
-		this.initializeShowCustomFrontmatterSetting();
-		this.initializeCustomFrontmatterKeysSetting();
 
 		// Set defaults for users that upgraded instead of fresh install.
 		const oldCreatedDefaults = ["created"];
