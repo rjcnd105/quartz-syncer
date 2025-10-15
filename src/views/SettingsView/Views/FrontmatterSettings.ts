@@ -450,7 +450,7 @@ export class FrontmatterSettings extends PluginSettingTab {
 			new Setting(this.settingsRootElement)
 				.setName("Custom frontmatter keys")
 				.setDesc(
-					"Comma-separated list of keys to look for to determine the custom frontmatter. By default, Quartz Syncer will look for 'custom', 'custom_frontmatter', and 'custom-frontmatter'.",
+					"Comma-separated list of keys to look for to determine the custom frontmatter.",
 				)
 				.addText((text) =>
 					text
