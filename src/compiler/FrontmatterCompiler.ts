@@ -374,6 +374,7 @@ export class FrontmatterCompiler {
 		baseFrontMatter: TFrontmatter,
 		newFrontMatter: TPublishedFrontMatter,
 	) {
+		const publishedFrontMatter = { ...newFrontMatter };
 		const { showCustomFrontmatter, customFrontmatterKey } = this.settings;
 
 		const overridden = this.settings.includeAllFrontmatter;
@@ -386,11 +387,11 @@ export class FrontmatterCompiler {
 				const frontmatterValue = baseFrontMatter[trimmedKey];
 
 				if (frontmatterValue) {
-					newFrontMatter[trimmedKey] = frontmatterValue;
+					publishedFrontMatter[trimmedKey] = frontmatterValue;
 				}
 			}
 		}
 
-		return newFrontMatter;
+		return publishedFrontMatter;
 	}
 }
