@@ -37,33 +37,46 @@ export function registerCliHandlers(plugin: QuartzSyncer): boolean {
 	}
 
 	const rawRegister = target.registerCliHandler.bind(target);
+	const commandNamespace = plugin.manifest?.id ?? "quartz-syncer";
+
+	const toRegisteredCommand = (command: string) =>
+		command.replace(/^quartz-syncer/, commandNamespace);
 
 	const register: RegisterFn = (command, description, flags, handler) => {
 		const expandedFlags = withDashAliases(flags);
+		const registeredCommand = toRegisteredCommand(command);
 
-		rawRegister(command, description, expandedFlags, (params: CliData) => {
-			const normalized = normalizeCliParams(params);
+		rawRegister(
+			registeredCommand,
+			description,
+			expandedFlags,
+			(params: CliData) => {
+				const normalized = normalizeCliParams(params);
 
-			if (normalized.help === "true" && command !== "quartz-syncer") {
-				const helpText = generateCommandHelp(
-					command,
-					description,
-					flags,
-				);
+				if (
+					normalized.help === "true" &&
+					registeredCommand !== commandNamespace
+				) {
+					const helpText = generateCommandHelp(
+						registeredCommand,
+						description,
+						flags,
+					);
 
-				if (normalized.format === "json") {
-					return formatCliOutput(normalized, {
-						ok: true,
-						command,
-						message: helpText,
-					});
+					if (normalized.format === "json") {
+						return formatCliOutput(normalized, {
+							ok: true,
+							command: registeredCommand,
+							message: helpText,
+						});
+					}
+
+					return helpText;
 				}
 
-				return helpText;
-			}
-
-			return handler(normalized);
-		});
+				return handler(normalized);
+			},
+		);
 	};
 
 	// Default: Help / usage

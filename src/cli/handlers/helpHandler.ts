@@ -58,66 +58,73 @@ export function createHelpHandler(
 		"Show available commands and usage information",
 		FLAGS,
 		(params: CliData): string => {
+			const commandNamespace = plugin.manifest?.id ?? COMMAND;
+
+			const helpText = HELP_TEXT.replace(
+				/obsidian quartz-syncer/g,
+				`obsidian ${commandNamespace}`,
+			).replace(/quartz-syncer:/g, `${commandNamespace}:`);
+
 			if (params.format === "json") {
 				return formatCliOutput(
 					params,
-					cliSuccess(COMMAND, HELP_TEXT, {
+					cliSuccess(commandNamespace, helpText, {
 						commands: [
 							{
-								name: "quartz-syncer:status",
+								name: `${commandNamespace}:status`,
 								description:
 									"Show the publish status of all marked notes",
 							},
 							{
-								name: "quartz-syncer:sync",
+								name: `${commandNamespace}:sync`,
 								description:
 									"Publish pending notes and optionally delete removed notes",
 							},
 							{
-								name: "quartz-syncer:publish",
+								name: `${commandNamespace}:publish`,
 								description:
 									"Publish pending notes without deletions",
 							},
 							{
-								name: "quartz-syncer:delete",
+								name: `${commandNamespace}:delete`,
 								description:
 									"Delete removed notes from the remote repository",
 							},
 							{
-								name: "quartz-syncer:mark",
+								name: `${commandNamespace}:mark`,
 								description:
 									"Set or toggle the publish flag for matching files",
 							},
 							{
-								name: "quartz-syncer:test",
+								name: `${commandNamespace}:test`,
 								description:
 									"Test repository connection and credentials",
 							},
 							{
-								name: "quartz-syncer:cache",
+								name: `${commandNamespace}:cache`,
 								description: "Manage the Quartz Syncer cache",
 							},
 							{
-								name: "quartz-syncer:config",
+								name: `${commandNamespace}:config`,
 								description:
 									"Read or update Quartz Syncer settings",
 							},
 							{
-								name: "quartz-syncer:upgrade",
+								name: `${commandNamespace}:upgrade`,
 								description:
 									"Upgrade the Quartz repository from upstream",
 							},
 							{
-								name: "quartz-syncer:version",
+								name: `${commandNamespace}:version`,
 								description:
 									"Show plugin, Obsidian, and Quartz version information",
 							},
 							{
-								name: "quartz-syncer:plugin",
+								name: `${commandNamespace}:plugin`,
 								description: "Manage Quartz v5 plugins",
 							},
 							{
-								name: "quartz-syncer:quartz-config",
+								name: `${commandNamespace}:quartz-config`,
 								description:
 									"Read or update Quartz v5 site configuration",
 							},
@@ -127,7 +134,7 @@ export function createHelpHandler(
 				);
 			}
 
-			return HELP_TEXT;
+			return helpText;
 		},
 	);
 }
