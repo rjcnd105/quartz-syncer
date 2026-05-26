@@ -384,10 +384,16 @@ export class FrontmatterCompiler {
 
 			for (const key of keys) {
 				const trimmedKey = key.trim();
-				const frontmatterValue = baseFrontMatter[trimmedKey];
 
-				if (frontmatterValue) {
-					publishedFrontMatter[trimmedKey] = frontmatterValue;
+				if (
+					trimmedKey.length > 0 &&
+					Object.prototype.hasOwnProperty.call(
+						baseFrontMatter,
+						trimmedKey,
+					)
+				) {
+					publishedFrontMatter[trimmedKey] =
+						baseFrontMatter[trimmedKey];
 				}
 			}
 		}

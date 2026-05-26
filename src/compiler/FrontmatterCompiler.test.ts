@@ -26,12 +26,14 @@ function makeSettings(
 		showCreatedTimestamp: false,
 		showUpdatedTimestamp: false,
 		showPublishedTimestamp: false,
+		showCustomFrontmatter: false,
 		publishFrontmatterKey: "publish",
 		allNotesPublishableByDefault: false,
 		contentFolder: "content",
 		createdTimestampKey: "created",
 		updatedTimestampKey: "updated",
 		publishedTimestampKey: "published",
+		customFrontmatterKey: "",
 		timestampFormat: "YYYY-MM-DD",
 		frontmatterFormat: "yaml",
 		useCache: false,
@@ -88,6 +90,10 @@ type PrivateFrontmatterCompiler = {
 	addTimestampsFrontmatter: (
 		file: PublishFile,
 	) => (
+		base: TFrontmatter,
+		next: TPublishedFrontMatter,
+	) => TPublishedFrontMatter;
+	addCustomFrontmatter: (
 		base: TFrontmatter,
 		next: TPublishedFrontMatter,
 	) => TPublishedFrontMatter;
@@ -605,6 +611,64 @@ describe("FrontmatterCompiler", () => {
 			);
 
 			expect(result.created).toBeUndefined();
+		});
+	});
+
+	describe("addCustomFrontmatter", () => {
+		it("copies configured custom keys when enabled", () => {
+			const compiler = makeCompiler({
+				showCustomFrontmatter: true,
+				customFrontmatterKey: "category, rating",
+			});
+
+			const compilerPrivate =
+				compiler as unknown as PrivateFrontmatterCompiler;
+
+			const result = compilerPrivate.addCustomFrontmatter(
+				{ category: "work", rating: 5, other: "ignored" },
+				{ publish: true },
+			);
+
+			expect(result).toEqual({
+				publish: true,
+				category: "work",
+				rating: 5,
+			});
+		});
+
+		it("preserves falsy configured values when key exists", () => {
+			const compiler = makeCompiler({
+				showCustomFrontmatter: true,
+				customFrontmatterKey: "featured, count",
+			});
+
+			const compilerPrivate =
+				compiler as unknown as PrivateFrontmatterCompiler;
+
+			const result = compilerPrivate.addCustomFrontmatter(
+				{ featured: false, count: 0 },
+				{},
+			);
+
+			expect(result).toEqual({ featured: false, count: 0 });
+		});
+
+		it("does not copy custom keys when includeAllFrontmatter is enabled", () => {
+			const compiler = makeCompiler({
+				showCustomFrontmatter: true,
+				includeAllFrontmatter: true,
+				customFrontmatterKey: "category",
+			});
+
+			const compilerPrivate =
+				compiler as unknown as PrivateFrontmatterCompiler;
+
+			const result = compilerPrivate.addCustomFrontmatter(
+				{ category: "work" },
+				{},
+			);
+
+			expect(result).toEqual({});
 		});
 	});
 });
