@@ -225,6 +225,7 @@ export class SyncerPageCompiler {
 	astTransform: TCompilerStep = () => async (text) => {
 		const vaultPath = this.settings.vaultPath;
 		const hasVaultPath = vaultPath !== "/" && vaultPath !== "";
+		const mathExpressions = this.preserveMathExpressions(text);
 
 		const processor = unified()
 			.use(remarkParse)
@@ -236,7 +237,7 @@ export class SyncerPageCompiler {
 				rule: "-",
 			});
 
-		const tree = processor.parse(text);
+		const tree = processor.parse(mathExpressions.text);
 		const transformed = await processor.run(tree);
 
 		if (hasVaultPath) {
@@ -266,8 +267,44 @@ export class SyncerPageCompiler {
 			line.replace(/(!?\[\[[^\]]*?)(?<!\\)\|([^\]]*?\]\])/g, "$1\\|$2"),
 		);
 
-		return result;
+		return mathExpressions.restore(result);
 	};
+
+	private preserveMathExpressions(text: string): {
+		text: string;
+		restore: (textWithPlaceholders: string) => string;
+	} {
+		const expressions: string[] = [];
+		const placeholderPrefix = "QSMATHPLACEHOLDER";
+		const placeholderSuffix = "QSMATHEND";
+
+		const replaceExpression = (expression: string) => {
+			const placeholder = `${placeholderPrefix}${expressions.length}${placeholderSuffix}`;
+			expressions.push(expression);
+
+			return placeholder;
+		};
+
+		const textWithPlaceholders = text
+			.replace(/\$\$[\s\S]*?\$\$/g, replaceExpression)
+			.replace(
+				/(^|[^$])(\$(?!\$)(?:\\.|[^\n$])+\$(?!\$))/g,
+				(_match, prefix: string, expression: string) =>
+					`${prefix}${replaceExpression(expression)}`,
+			);
+
+		return {
+			text: textWithPlaceholders,
+			restore: (textWithPlaceholders: string) =>
+				textWithPlaceholders.replace(
+					new RegExp(
+						`${placeholderPrefix}(\\d+)${placeholderSuffix}`,
+						"g",
+					),
+					(_match, index: string) => expressions[Number(index)] ?? "",
+				),
+		};
+	}
 
 	/**
 	 * Converts the front matter of the file to a string.
