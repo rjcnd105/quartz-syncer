@@ -1,0 +1,12 @@
+[env]
+QUARTZ_SYNCER_CUSTOM_PLUGIN_DIR = "/Users/hj/Library/Mobile Documents/iCloud~md~obsidian/Documents/Brain/.obsidian/plugins/quartz-syncer-custom"
+
+[tasks."quartz-syncer-custom:update"]
+description = "Build quartz-syncer-custom and update the Brain vault plugin files."
+run = """
+set -eu
+npm install
+npm run build
+mkdir -p "$QUARTZ_SYNCER_CUSTOM_PLUGIN_DIR"
+cp main.js manifest.json styles.css "$QUARTZ_SYNCER_CUSTOM_PLUGIN_DIR"/
+"""
