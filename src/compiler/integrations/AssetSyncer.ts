@@ -1,8 +1,7 @@
 import { Notice } from "obsidian";
-import { RepositoryConnection } from "src/repositoryConnection/RepositoryConnection";
 import { integrationRegistry } from "./registry";
 import QuartzSyncerSettings from "src/models/settings";
-import Logger from "js-logger";
+import type { QuartzFileSource } from "src/quartz/QuartzFileSource";
 
 const SYNCER_STYLES_DIR = "quartz/styles/syncer";
 const INDEX_FILE = "_index.scss";
@@ -23,7 +22,7 @@ export class AssetSyncer {
 	}
 
 	async collectAssets(
-		connection: RepositoryConnection,
+		connection: QuartzFileSource,
 	): Promise<AssetSyncResult> {
 		const result: AssetSyncResult = {
 			success: false,
@@ -47,7 +46,7 @@ export class AssetSyncer {
 					result.filesToDelete.length > 0 ||
 					result.filesToStage.size > 0
 				) {
-					Logger.info(
+					console.debug(
 						`Will remove ${result.filesToDelete.length} syncer style files`,
 					);
 				}
@@ -69,17 +68,17 @@ export class AssetSyncer {
 
 				if (customScssUpdate) {
 					result.filesToStage.set(CUSTOM_SCSS_PATH, customScssUpdate);
-					Logger.info("Will add syncer import to custom.scss");
+					console.debug("Will add syncer import to custom.scss");
 				}
 
-				Logger.info(
+				console.debug(
 					`Collected ${result.filesToStage.size} integration style files`,
 				);
 			}
 
 			result.success = true;
 		} catch (error) {
-			Logger.error("Failed to collect integration assets", error);
+			console.debug("Failed to collect integration assets", error);
 
 			new Notice(
 				"Quartz Syncer: Failed to collect integration styles. Check console for details.",
@@ -91,7 +90,7 @@ export class AssetSyncer {
 		return result;
 	}
 
-	private async collectCleanup(connection: RepositoryConnection): Promise<{
+	private async collectCleanup(connection: QuartzFileSource): Promise<{
 		filesToDelete: string[];
 		customScssUpdate: string | null;
 	}> {
@@ -99,66 +98,46 @@ export class AssetSyncer {
 		let customScssUpdate: string | null = null;
 
 		try {
-			const repoContent = await connection.getContent();
+			const entries = await connection.listDirectory(SYNCER_STYLES_DIR);
 
-			if (repoContent) {
-				const syncerFiles = repoContent.tree.filter(
-					(entry) =>
-						entry.path.startsWith(SYNCER_STYLES_DIR) &&
-						entry.type === "blob",
-				);
-
-				for (const file of syncerFiles) {
-					filesToDelete.push(file.path);
-				}
+			for (const entry of entries) {
+				if (entry.type !== "blob") continue;
+				filesToDelete.push(`${SYNCER_STYLES_DIR}/${entry.name}`);
 			}
 		} catch (error) {
-			Logger.debug(
+			console.debug(
 				"Could not list syncer style files for cleanup",
 				error,
 			);
 		}
 
 		try {
-			const customScss = await connection.getRawFile(CUSTOM_SCSS_PATH);
+			const content = await connection.readFile(CUSTOM_SCSS_PATH);
 
-			if (customScss) {
-				/* eslint-disable-next-line no-undef -- Buffer polyfill available at runtime */
-				const content = Buffer.from(
-					customScss.content,
-					"base64",
-				).toString("utf-8");
-
-				if (content.includes(SYNCER_IMPORT)) {
-					customScssUpdate = this.removeSyncerImport(content);
-				}
+			if (content && content.includes(SYNCER_IMPORT)) {
+				customScssUpdate = this.removeSyncerImport(content);
 			}
 		} catch {
-			Logger.debug("custom.scss not found, no cleanup needed");
+			console.debug("custom.scss not found, no cleanup needed");
 		}
 
 		return { filesToDelete, customScssUpdate };
 	}
 
 	private async getCustomScssUpdate(
-		connection: RepositoryConnection,
+		connection: QuartzFileSource,
 	): Promise<string | null> {
 		try {
 			let content = "";
 
 			try {
-				const customScss =
-					await connection.getRawFile(CUSTOM_SCSS_PATH);
+				const customScss = await connection.readFile(CUSTOM_SCSS_PATH);
 
 				if (customScss) {
-					/* eslint-disable-next-line no-undef -- Buffer polyfill available at runtime */
-					content = Buffer.from(
-						customScss.content,
-						"base64",
-					).toString("utf-8");
+					content = customScss;
 				}
 			} catch {
-				Logger.debug("custom.scss not found, will create with import");
+				console.debug("custom.scss not found, will create with import");
 			}
 
 			if (!content.includes(SYNCER_IMPORT)) {
@@ -167,7 +146,7 @@ export class AssetSyncer {
 
 			return null;
 		} catch (error) {
-			Logger.error("Failed to check custom.scss", error);
+			console.debug("Failed to check custom.scss", error);
 			throw error;
 		}
 	}

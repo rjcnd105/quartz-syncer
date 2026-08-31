@@ -1,10 +1,9 @@
-import { RepositoryConnection } from "src/repositoryConnection/RepositoryConnection";
+import type { QuartzFileSource } from "src/quartz/QuartzFileSource";
 import { QuartzVersionDetector } from "./QuartzVersionDetector";
 import type { GitAuth } from "src/models/settings";
 import { requestUrl } from "obsidian";
-import Logger from "js-logger";
-
-const logger = Logger.get("quartz-upgrade-service");
+import type { QuartzRunner } from "src/process/runners/QuartzRunner";
+import { fetchRemoteHeadCommit } from "src/git/GitRemoteUtils";
 
 const UPSTREAM_PACKAGE_JSON_URL =
 	"https://raw.githubusercontent.com/jackyzha0/quartz/v5/package.json";
@@ -22,11 +21,27 @@ export interface QuartzUpgradeStatus {
 	error?: string;
 }
 
-export class QuartzUpgradeService {
-	private userRepo: RepositoryConnection;
+type QuartzUpgradeRuntime = {
+	enableSystemCommands: boolean;
+	quartzRepoPath: string;
+	quartzRunner: QuartzRunner | null;
+};
 
-	constructor(userRepo: RepositoryConnection) {
+type QuartzUpgradeRepo = QuartzFileSource & {
+	upgradeFromUpstream?: (
+		upstreamUrl: string,
+		upstreamBranch: string,
+	) => Promise<{ oid: string; alreadyMerged: boolean }>;
+	hasCommitInHistory?: (sha: string) => Promise<boolean>;
+};
+
+export class QuartzUpgradeService {
+	private userRepo: QuartzUpgradeRepo;
+	private runtime?: QuartzUpgradeRuntime;
+
+	constructor(userRepo: QuartzUpgradeRepo, runtime?: QuartzUpgradeRuntime) {
 		this.userRepo = userRepo;
+		this.runtime = runtime;
 	}
 
 	async checkForUpgrade(): Promise<QuartzUpgradeStatus> {
@@ -38,7 +53,7 @@ export class QuartzUpgradeService {
 					this.userRepo,
 				);
 		} catch (error) {
-			logger.debug("Could not read current Quartz version", error);
+			console.debug("Could not read current Quartz version", error);
 		}
 
 		let upstreamVersion: string | null = null;
@@ -48,7 +63,7 @@ export class QuartzUpgradeService {
 		} catch (error) {
 			const message =
 				error instanceof Error ? error.message : String(error);
-			logger.debug("Could not reach upstream Quartz", error);
+			console.debug("Could not reach upstream Quartz", error);
 
 			return {
 				currentVersion,
@@ -77,38 +92,43 @@ export class QuartzUpgradeService {
 		let latestUpstreamSha: string | null = null;
 
 		try {
-			latestUpstreamSha =
-				await RepositoryConnection.fetchRemoteHeadCommit(
-					UPSTREAM_REPO_URL,
-					UPSTREAM_AUTH,
-					UPSTREAM_BRANCH,
-				);
-			logger.info(`Upstream HEAD commit: ${latestUpstreamSha ?? "null"}`);
+			latestUpstreamSha = await fetchRemoteHeadCommit(
+				UPSTREAM_REPO_URL,
+				UPSTREAM_AUTH,
+				UPSTREAM_BRANCH,
+			);
+
+			console.debug(
+				`Upstream HEAD commit: ${latestUpstreamSha ?? "null"}`,
+			);
 		} catch (error) {
-			logger.warn("Could not fetch upstream HEAD commit SHA", error);
+			console.debug("Could not fetch upstream HEAD commit SHA", error);
 		}
 
 		let hasNewerCommits = false;
 
 		if (latestUpstreamSha) {
-			logger.info(
-				`Checking if ${latestUpstreamSha.slice(
-					0,
-					7,
-				)} exists in user repo history`,
+			console.debug(
+				`Checking if ${latestUpstreamSha.slice(0, 7)} exists in user repo history`,
 			);
 
-			const foundInHistory =
-				await this.userRepo.hasCommitInHistory(latestUpstreamSha);
-			hasNewerCommits = !foundInHistory;
+			if (this.userRepo.hasCommitInHistory) {
+				try {
+					const foundInHistory =
+						await this.userRepo.hasCommitInHistory(
+							latestUpstreamSha,
+						);
+					hasNewerCommits = !foundInHistory;
+				} catch {
+					hasNewerCommits = hasUpgrade;
+				}
+			} else {
+				hasNewerCommits = hasUpgrade;
+			}
 
-			logger.info(
-				`Commit ${latestUpstreamSha.slice(0, 7)} ${
-					foundInHistory ? "found" : "NOT found"
-				} in user repo`,
-			);
+			console.debug(`hasNewerCommits: ${hasNewerCommits}`);
 		} else {
-			logger.warn(
+			console.debug(
 				"Could not determine upstream HEAD SHA, skipping commit check",
 			);
 		}
@@ -128,21 +148,35 @@ export class QuartzUpgradeService {
 		alreadyMerged?: boolean;
 		error?: string;
 	}> {
-		try {
-			logger.info("Starting Quartz upgrade from upstream");
+		if (
+			this.runtime?.enableSystemCommands &&
+			this.runtime.quartzRepoPath &&
+			this.runtime.quartzRunner
+		) {
+			const result = await this.runtime.quartzRunner.update({
+				cwd: this.runtime.quartzRepoPath,
+			});
+			if (!result.ok) {
+				return { success: false, error: result.error };
+			}
+			return { success: true };
+		}
 
-			const result = await this.userRepo.upgradeFromUpstream(
-				UPSTREAM_REPO_URL,
-				UPSTREAM_BRANCH,
-			);
+		try {
+			console.debug("Starting Quartz upgrade from upstream");
+
+			const upgradeFromUpstream = this.userRepo.upgradeFromUpstream;
+			const result = upgradeFromUpstream
+				? await upgradeFromUpstream(UPSTREAM_REPO_URL, UPSTREAM_BRANCH)
+				: { oid: "", alreadyMerged: true };
 
 			if (result.alreadyMerged) {
-				logger.info("Quartz is already up to date with upstream");
+				console.debug("Quartz is already up to date with upstream");
 
 				return { success: true, alreadyMerged: true, oid: result.oid };
 			}
 
-			logger.info(
+			console.debug(
 				`Quartz upgraded successfully to ${result.oid.slice(0, 7)}`,
 			);
 
@@ -153,12 +187,13 @@ export class QuartzUpgradeService {
 
 			const isConflict =
 				message.includes("Merge conflicts in:") ||
+				message.includes("Cannot auto-upgrade:") ||
 				message.includes("MergeNotSupportedError") ||
 				message.includes("MergeConflictError") ||
 				message.includes("Merges with conflicts");
 
 			if (isConflict) {
-				logger.warn(`Upgrade aborted: ${message}`);
+				console.debug(`Upgrade aborted: ${message}`);
 
 				return {
 					success: false,
@@ -166,7 +201,7 @@ export class QuartzUpgradeService {
 				};
 			}
 
-			logger.error("Quartz upgrade failed", error);
+			console.debug("Quartz upgrade failed", error);
 
 			return {
 				success: false,

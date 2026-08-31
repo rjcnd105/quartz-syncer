@@ -1,9 +1,5 @@
-import { Base64 } from "js-base64";
-import Logger from "js-logger";
-import { RepositoryConnection } from "src/repositoryConnection/RepositoryConnection";
+import type { QuartzFileSource } from "src/quartz/QuartzFileSource";
 import type { QuartzV5Config } from "./QuartzConfigTypes";
-
-const logger = Logger.get("quartz-template-service");
 
 const TEMPLATES_DIR = "quartz/cli/templates";
 const BUILT_IN_FRAMES = ["default", "full-width", "minimal"];
@@ -14,9 +10,9 @@ export interface QuartzTemplate {
 }
 
 export class QuartzTemplateService {
-	private repo: RepositoryConnection;
+	private repo: QuartzFileSource;
 
-	constructor(repo: RepositoryConnection) {
+	constructor(repo: QuartzFileSource) {
 		this.repo = repo;
 	}
 
@@ -30,18 +26,18 @@ export class QuartzTemplateService {
 		const configPath = `${TEMPLATES_DIR}/${templateName}/quartz.config.yaml`;
 
 		try {
-			const file = await this.repo.getRawFile(configPath);
+			const content = await this.repo.readFile(configPath);
 
-			if (!file) return null;
+			if (!content) return null;
 
 			const { parseDocument } = await import("yaml");
-			const content = Base64.decode(file.content);
+
 			const doc = parseDocument(content, { keepSourceTokens: true });
 			const config = doc.toJSON() as QuartzV5Config;
 
 			return { name: templateName, config };
 		} catch (error) {
-			logger.debug(`Could not read template ${templateName}`, error);
+			console.debug(`Could not read template ${templateName}`, error);
 
 			return null;
 		}

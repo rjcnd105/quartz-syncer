@@ -17,21 +17,20 @@ node_modules
 
 # obsidian
 data.json
-!src/testVault/.obsidian/plugins/obsidian-excalidraw-plugin/data.json
-!src/testVault/.obsidian/plugins/dataview/data.json
-!content/.obsidian/plugins/obsidian-excalidraw-plugin/data.json
-!content/.obsidian/plugins/dataview/data.json
-deploy.ps1
-deploy.sh
 
 # mac
 .DS_Store
 yarn.lock
+bun.lock
 
 .env
 .obsidian-cache
-src/testVault/.obsidian/workspace.json
-content/.obsidian/workspace.json
+.sisyphus/
+.opencode/
+test/e2e/quartz-build/.quartz-cache/
+test-vault/.obsidian/plugins/
+test-vault/.obsidian/workspace.json
+test-vault/.obsidian/workspace-mobile.json
 
 # Documentation
 docs/.obsidian

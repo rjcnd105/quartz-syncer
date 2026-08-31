@@ -7,11 +7,11 @@ import {
 } from "obsidian";
 import QuartzSyncerSettings from "src/models/settings";
 import { escapeRegExp } from "src/utils/utils";
+import { ASSET_EXTENSIONS } from "src/utils/mediaTypes";
 import {
 	FRONTMATTER_REGEX,
 	DATAVIEW_LINK_TARGET_BLANK_REGEX,
 } from "src/utils/regexes";
-import Logger from "js-logger";
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
@@ -21,7 +21,7 @@ import type { Root, Link, Image } from "mdast";
 import { visit } from "unist-util-visit";
 import { PublishFile } from "src/publishFile/PublishFile";
 import { PluginCompiler } from "src/compiler/PluginCompiler";
-import { DataStore } from "src/publishFile/DataStore";
+import { DataStore } from "src/cache/DataStore";
 
 /**
  * Interface for an asset that will be published.
@@ -148,22 +148,12 @@ export class SyncerPageCompiler {
 
 	async generateMarkdown(file: PublishFile): Promise<TCompiledFile> {
 		const vaultFileText = await file.cachedRead();
-
-		if (file.getType() === "base") {
-			const blobs = await this.resolveEmbeddedAssets(file);
-
-			return [vaultFileText, { blobs }];
-		}
-
-		if (file.getType() === "canvas") {
-			const blobs = await this.resolveEmbeddedAssets(file);
-
-			return [vaultFileText, { blobs }];
-		}
+		const fileType = file.getType();
 
 		if (
-			file.file.name.endsWith(".excalidraw") ||
-			file.file.name.endsWith(".excalidraw.md")
+			fileType === "base" ||
+			fileType === "canvas" ||
+			fileType === "excalidraw"
 		) {
 			const blobs = await this.resolveEmbeddedAssets(file);
 
@@ -185,7 +175,7 @@ export class SyncerPageCompiler {
 
 		const [text, blobs] = await this.convertFileLinks(file)(compiledText);
 
-		return [text, { blobs }];
+		return [SyncerPageCompiler.escapeTableWikilinks(text), { blobs }];
 	}
 
 	private stripVaultPath(text: string): string {
@@ -209,7 +199,7 @@ export class SyncerPageCompiler {
 			text = text.replace(wikilinkRegex, "[[$1]]");
 			text = text.replace(markdownLinkRegex, "[$1]($2)");
 		} catch (e) {
-			Logger.error(
+			console.debug(
 				`Error while stripping vault path from text: ${String(e)}`,
 			);
 		}
@@ -225,7 +215,6 @@ export class SyncerPageCompiler {
 	astTransform: TCompilerStep = () => async (text) => {
 		const vaultPath = this.settings.vaultPath;
 		const hasVaultPath = vaultPath !== "/" && vaultPath !== "";
-		const mathExpressions = this.preserveMathExpressions(text);
 
 		const processor = unified()
 			.use(remarkParse)
@@ -237,7 +226,7 @@ export class SyncerPageCompiler {
 				rule: "-",
 			});
 
-		const tree = processor.parse(mathExpressions.text);
+		const tree = processor.parse(text);
 		const transformed = await processor.run(tree);
 
 		if (hasVaultPath) {
@@ -263,48 +252,8 @@ export class SyncerPageCompiler {
 
 		result = result.replace(/\\\[(\^[\w-]+)\]/g, "[$1]");
 
-		result = result.replace(/^(\|.*)/gm, (line) =>
-			line.replace(/(!?\[\[[^\]]*?)(?<!\\)\|([^\]]*?\]\])/g, "$1\\|$2"),
-		);
-
-		return mathExpressions.restore(result);
+		return result;
 	};
-
-	private preserveMathExpressions(text: string): {
-		text: string;
-		restore: (textWithPlaceholders: string) => string;
-	} {
-		const expressions: string[] = [];
-		const placeholderPrefix = "QSMATHPLACEHOLDER";
-		const placeholderSuffix = "QSMATHEND";
-
-		const replaceExpression = (expression: string) => {
-			const placeholder = `${placeholderPrefix}${expressions.length}${placeholderSuffix}`;
-			expressions.push(expression);
-
-			return placeholder;
-		};
-
-		const textWithPlaceholders = text
-			.replace(/\$\$[\s\S]*?\$\$/g, replaceExpression)
-			.replace(
-				/(^|[^$])(\$(?!\$)(?:\\.|[^\n$])+\$(?!\$))/g,
-				(_match, prefix: string, expression: string) =>
-					`${prefix}${replaceExpression(expression)}`,
-			);
-
-		return {
-			text: textWithPlaceholders,
-			restore: (textWithPlaceholders: string) =>
-				textWithPlaceholders.replace(
-					new RegExp(
-						`${placeholderPrefix}(\\d+)${placeholderSuffix}`,
-						"g",
-					),
-					(_match, index: string) => expressions[Number(index)] ?? "",
-				),
-		};
-	}
 
 	/**
 	 * Converts the front matter of the file to a string.
@@ -342,21 +291,17 @@ export class SyncerPageCompiler {
 		return text.replace(DATAVIEW_LINK_TARGET_BLANK_REGEX, "");
 	};
 
-	private static readonly ASSET_EXTENSIONS = new Set([
-		"png",
-		"jpg",
-		"jpeg",
-		"gif",
-		"webp",
-		"mp4",
-		"mkv",
-		"mov",
-		"avi",
-		"mp3",
-		"wav",
-		"ogg",
-		"pdf",
-	]);
+	private static readonly ASSET_EXTENSIONS = ASSET_EXTENSIONS;
+
+	/**
+	 * Escape unescaped pipes inside wikilinks on table rows so that
+	 * Quartz does not misinterpret them as cell separators.
+	 */
+	static escapeTableWikilinks(text: string): string {
+		return text.replace(/^(\|.*)/gm, (line) =>
+			line.replace(/(!?\[\[[^\]]*?)(?<!\\)\|([^\]]*?\]\])/g, "$1\\|$2"),
+		);
+	}
 
 	/**
 	 * Extracts blob links from the file using CachedMetadata.embeds.
@@ -367,7 +312,7 @@ export class SyncerPageCompiler {
 	 * @param file - The file to extract the blob links from.
 	 * @returns A promise that resolves to an array of asset paths.
 	 */
-	extractBlobLinks = async (file: PublishFile) => {
+	extractBlobLinks = async (file: PublishFile): Promise<string[]> => {
 		const assets: string[] = [];
 
 		// Canvas files are JSON, not markdown — keep JSON parsing
@@ -375,8 +320,9 @@ export class SyncerPageCompiler {
 			const text = await file.cachedRead();
 
 			try {
-				/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument -- canvas JSON nodes are untyped */
-				const canvasData = JSON.parse(text);
+				const canvasData = JSON.parse(text) as {
+					nodes?: Array<{ type?: string; file?: string }>;
+				};
 
 				if (Array.isArray(canvasData?.nodes)) {
 					for (const node of canvasData.nodes) {
@@ -401,9 +347,8 @@ export class SyncerPageCompiler {
 						}
 					}
 				}
-				/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument -- end canvas JSON parsing block */
 			} catch {
-				Logger.warn(`Failed to parse canvas file: ${file.getPath()}`);
+				console.debug(`Failed to parse canvas file: ${file.getPath()}`);
 			}
 
 			return assets;
@@ -507,13 +452,13 @@ export class SyncerPageCompiler {
 
 					const blobLinkText = this.metadataCache.fileToLinktext(
 						linkedFile,
-						this.settings.vaultPath,
+						filePath,
 					);
 
 					const blobFullPath =
 						this.metadataCache.getFirstLinkpathDest(
 							linkedFile.path,
-							this.settings.vaultPath,
+							filePath,
 						)?.path ?? blobLinkText;
 
 					assets.push({
@@ -578,6 +523,10 @@ export class SyncerPageCompiler {
 						"$1\\|$2",
 					);
 
+					// Single .replace() is correct here — Obsidian's cache.embeds
+					// is position-unique (EmbedCache has position: Pos), so the
+					// loop iterates each occurrence individually. Each .replace()
+					// consumes the next remaining match in the string.
 					if (blobText.includes(embed.original)) {
 						blobText = blobText.replace(
 							embed.original,

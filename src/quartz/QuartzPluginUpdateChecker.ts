@@ -9,10 +9,7 @@ import {
 	getPluginName,
 	getSourceRef,
 } from "./QuartzPluginUtils";
-import { RepositoryConnection } from "src/repositoryConnection/RepositoryConnection";
-import Logger from "js-logger";
-
-const logger = Logger.get("quartz-plugin-update-checker");
+import { fetchRemoteHeadCommit } from "src/git/GitRemoteUtils";
 
 export interface PluginUpdateStatus {
 	name: string;
@@ -26,6 +23,7 @@ export interface PluginUpdateStatus {
 export class QuartzPluginUpdateChecker {
 	private auth: GitAuth;
 	private corsProxyUrl?: string;
+	private commitCache = new Map<string, Promise<string | null>>();
 
 	constructor(auth: GitAuth, corsProxyUrl?: string) {
 		this.auth = auth;
@@ -66,14 +64,21 @@ export class QuartzPluginUpdateChecker {
 		try {
 			const gitUrl = resolveSourceToGitUrl(plugin.source);
 			const ref = getSourceRef(plugin.source) ?? undefined;
+			const cacheKey = `${gitUrl}#${ref ?? "HEAD"}`;
 
-			const remoteCommit =
-				await RepositoryConnection.fetchRemoteHeadCommit(
+			let commitPromise = this.commitCache.get(cacheKey);
+
+			if (!commitPromise) {
+				commitPromise = fetchRemoteHeadCommit(
 					gitUrl,
 					this.auth,
 					ref,
 					this.corsProxyUrl,
 				);
+				this.commitCache.set(cacheKey, commitPromise);
+			}
+
+			const remoteCommit = await commitPromise;
 
 			if (!remoteCommit) {
 				return {
@@ -96,7 +101,7 @@ export class QuartzPluginUpdateChecker {
 		} catch (error) {
 			const message =
 				error instanceof Error ? error.message : String(error);
-			logger.debug(`Update check failed for ${sourceKey}`, error);
+			console.debug(`Update check failed for ${sourceKey}`, error);
 
 			return {
 				name: sourceKey,

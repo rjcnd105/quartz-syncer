@@ -10,13 +10,36 @@ import {
 import QuartzSyncerSettings from "src/models/settings";
 import { hasPublishFlag } from "src/publishFile/Validator";
 import { FileMetadataManager } from "src/publishFile/FileMetaDataManager";
-import { DataStore } from "src/publishFile/DataStore";
+import { DataStore } from "src/cache/DataStore";
 import { generateBlobHash } from "src/utils/utils";
 import {
 	DATAVIEW_FIELD_REGEX,
 	DATAVIEW_INLINE_FIELD_REGEX,
 } from "src/utils/regexes";
 import { hasDynamicContent } from "src/utils/dynamicContent";
+
+/**
+ * Determines the special file type from a TFile, if any.
+ * Returns the type string or null for regular markdown files.
+ */
+export function getSpecialFileType(file: {
+	extension: string;
+	path: string;
+	name: string;
+}): "base" | "canvas" | "excalidraw" | null {
+	if (file.extension === "base") return "base";
+
+	if (file.extension === "canvas") return "canvas";
+
+	if (
+		file.name.endsWith(".excalidraw") ||
+		file.name.endsWith(".excalidraw.md")
+	) {
+		return "excalidraw";
+	}
+
+	return null;
+}
 
 /**
  * IPublishFileProps interface.
@@ -74,18 +97,22 @@ export class PublishFile {
 	 *
 	 * @returns A promise that resolves to a CompiledPublishFile instance.
 	 */
-	async compile(): Promise<CompiledPublishFile> {
+	async compile(trustDynamicCache = false): Promise<CompiledPublishFile> {
 		let compiledFile: TCompiledFile;
+		const sourceMtime = this.file.stat.mtime;
 
 		if (this.settings.useCache) {
 			const cachedFile = await this.datastore.loadLocalFile(
 				this.file.path,
+				sourceMtime,
+				trustDynamicCache,
 			);
 
 			const outdated = cachedFile
 				? await this.datastore.isLocalFileOutdated(
 						this.file.path,
-						this.file.stat.mtime,
+						sourceMtime,
+						trustDynamicCache,
 					)
 				: true;
 
@@ -106,18 +133,21 @@ export class PublishFile {
 				}
 
 				const localHash = await generateBlobHash(storedFile[0]);
+				const currentMtime = this.file.stat.mtime;
 
 				await this.datastore.storeLocalFile(
 					this.file.path,
-					this.file.stat.mtime,
+					sourceMtime,
 					storedFile,
 					isDynamic,
+					currentMtime,
 				);
 
 				await this.datastore.storeLocalHash(
 					this.file.path,
-					this.file.stat.mtime,
+					sourceMtime,
 					localHash,
+					currentMtime,
 				);
 			}
 
@@ -169,20 +199,13 @@ export class PublishFile {
 	 * @returns true if the file should be published, false otherwise.
 	 */
 	shouldPublish(): boolean {
-		if (this.file.extension === "base") {
-			return this.settings.useBases;
-		}
+		const specialType = getSpecialFileType(this.file);
 
-		if (this.file.extension === "canvas") {
-			return this.settings.useCanvas;
-		}
+		if (specialType === "base") return this.settings.useBases;
 
-		if (
-			this.file.name.endsWith(".excalidraw") ||
-			this.file.name.endsWith(".excalidraw.md")
-		) {
-			return this.settings.useExcalidraw;
-		}
+		if (specialType === "canvas") return this.settings.useCanvas;
+
+		if (specialType === "excalidraw") return this.settings.useExcalidraw;
 
 		return hasPublishFlag(
 			this.settings.publishFrontmatterKey,
@@ -196,7 +219,7 @@ export class PublishFile {
 	 *
 	 * @returns An array of blob links.
 	 */
-	async getBlobLinks() {
+	async getBlobLinks(): Promise<string[]> {
 		return this.compiler.extractBlobLinks(this);
 	}
 
@@ -205,7 +228,7 @@ export class PublishFile {
 	 *
 	 * @returns The content of the file as a string.
 	 */
-	async cachedRead() {
+	async cachedRead(): Promise<string> {
 		return this.vault.cachedRead(this.file);
 	}
 

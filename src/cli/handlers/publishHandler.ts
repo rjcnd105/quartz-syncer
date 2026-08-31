@@ -1,163 +1,135 @@
-import type QuartzSyncer from "main";
-import { CliData, CliFlags, RegisterFn } from "../types";
-import { formatCliOutput, cliSuccess, cliError } from "../formatOutput";
-import { validatePreFlight } from "../validators";
-import { CliProgressController } from "../cliProgressController";
-import Publisher from "src/publisher/Publisher";
-import PublishStatusManager from "src/publisher/PublishStatusManager";
-import QuartzSyncerSiteManager from "src/repositoryConnection/QuartzSyncerSiteManager";
+import type QuartzSyncer from "src/main";
+import type { CliHandler } from "src/cli/types";
+import { isMediaFile } from "src/utils/mediaTypes";
 
-const COMMAND = "quartz-syncer:publish";
+export function createPublishHandler(_plugin: QuartzSyncer): CliHandler {
+	return async (params) => {
+		const publisher = _plugin.getPublisher();
+		if (!publisher) {
+			return { success: false, error: "Repository not configured" };
+		}
 
-const FLAGS: CliFlags = {
-	"dry-run": {
-		description: "Show what would be published without changes",
-	},
-	format: {
-		value: "<json|text>",
-		description: "Output format (default: text)",
-	},
-};
+		const action = params.args.action?.toLowerCase();
 
-export function createPublishHandler(
-	register: RegisterFn,
-	plugin: QuartzSyncer,
-): void {
-	register(
-		COMMAND,
-		"Publish pending notes without deletions",
-		FLAGS,
-		async (params: CliData): Promise<string> => {
-			try {
-				const validationError = validatePreFlight(plugin);
-
-				if (validationError) {
-					return formatCliOutput(
-						params,
-						cliError(COMMAND, validationError),
-					);
-				}
-
-				const startTime = Date.now();
-				const dryRun = params["dry-run"] === "true";
-				const verbose = params.verbose === "true";
-				const includeVerbose = verbose && params.format !== "json";
-
-				const siteManager = new QuartzSyncerSiteManager(
-					plugin.app.metadataCache,
-					plugin.settings,
-					plugin.getGitSettingsWithSecret(),
-				);
-
-				const publisher = new Publisher(
-					plugin.app,
-					plugin,
-					plugin.app.vault,
-					plugin.app.metadataCache,
-					plugin.settings,
-					plugin.datastore,
-					plugin.extendedCache,
-				);
-
-				const statusManager = new PublishStatusManager(
-					siteManager,
-					publisher,
-				);
-				const controller = new CliProgressController();
-				const status = await statusManager.getPublishStatus(controller);
-
-				const filesToPublish = [
-					...status.unpublishedNotes,
-					...status.changedNotes,
-				];
-
-				const data = {
-					publish: filesToPublish.map((f) => f.getPath()),
-					summary: {
-						published: filesToPublish.length,
-					},
+		if (action === "arbitrary") {
+			if (!_plugin.settings.allowArbitraryFilePublishing) {
+				return {
+					success: false,
+					error: "Arbitrary file publishing is disabled. Enable it in settings.",
 				};
-
-				const buildVerboseMessage = (
-					published: string[],
-					fallback: string,
-				): string => {
-					if (!includeVerbose) {
-						return fallback;
-					}
-
-					if (published.length === 0) {
-						return fallback;
-					}
-
-					return [
-						`Published ${published.length} file${
-							published.length === 1 ? "" : "s"
-						}:`,
-						...published.map((path) => `\t${path}`),
-					].join("\n");
-				};
-
-				if (dryRun) {
-					const baseMessage = `Dry run: ${filesToPublish.length} to publish.`;
-
-					const message = buildVerboseMessage(
-						data.publish,
-						baseMessage,
-					);
-
-					return formatCliOutput(
-						params,
-						cliSuccess(
-							COMMAND,
-							message,
-							data,
-							Date.now() - startTime,
-						),
-					);
-				}
-
-				if (filesToPublish.length === 0) {
-					return formatCliOutput(
-						params,
-						cliSuccess(
-							COMMAND,
-							buildVerboseMessage([], "Nothing to publish."),
-							data,
-							Date.now() - startTime,
-						),
-					);
-				}
-
-				const connection = publisher.createConnection();
-
-				const publishOk = await publisher.publishBatch(
-					filesToPublish,
-					connection,
-				);
-
-				if (!publishOk) {
-					throw new Error("Failed to publish files.");
-				}
-
-				const baseMessage = `Published ${filesToPublish.length} file${
-					filesToPublish.length === 1 ? "" : "s"
-				}.`;
-				const message = buildVerboseMessage(data.publish, baseMessage);
-
-				return formatCliOutput(
-					params,
-					cliSuccess(COMMAND, message, data, Date.now() - startTime),
-				);
-			} catch (error) {
-				return formatCliOutput(
-					params,
-					cliError(
-						COMMAND,
-						error instanceof Error ? error.message : String(error),
-					),
-				);
 			}
-		},
-	);
+
+			if (!params.flags.has("force")) {
+				return {
+					success: false,
+					error: "Arbitrary file publishing requires the 'force' flag.",
+				};
+			}
+
+			const paths = _plugin.settings.arbitraryPublishPaths;
+
+			if (!paths || paths.length === 0) {
+				return {
+					success: false,
+					error: "No arbitrary publish paths configured in settings.",
+				};
+			}
+
+			if (params.flags.has("dry-run")) {
+				return {
+					success: true,
+					data: { dryRun: true, paths },
+				};
+			}
+
+			const files: Array<{
+				repoPath: string;
+				content: string | Uint8Array;
+				encoding: "utf-8" | "base64";
+			}> = [];
+
+			for (const filePath of paths) {
+				const vaultFile = _plugin.app.vault.getFileByPath(filePath);
+				if (!vaultFile) continue;
+
+				const isBinary = isMediaFile(filePath);
+
+				if (isBinary) {
+					const buffer =
+						await _plugin.app.vault.readBinary(vaultFile);
+					const bytes = new Uint8Array(buffer);
+					files.push({
+						repoPath: filePath,
+						content: bytes,
+						encoding: "base64",
+					});
+				} else {
+					const content = await _plugin.app.vault.read(vaultFile);
+					files.push({
+						repoPath: filePath,
+						content,
+						encoding: "utf-8",
+					});
+				}
+			}
+
+			if (files.length === 0) {
+				return {
+					success: false,
+					error: "No matching files found in vault for configured paths.",
+				};
+			}
+
+			const commitMessage =
+				params.args.message ??
+				"Published arbitrary files via Quartz Syncer CLI";
+			const result = await publisher.publishArbitraryFiles(
+				files,
+				commitMessage,
+			);
+
+			return {
+				success: result.success,
+				data: {
+					filesPublished: result.filesPublished,
+					commitSha: result.commitSha,
+					...(params.verbose
+						? { files: files.map((file) => file.repoPath) }
+						: {}),
+				},
+				error: result.error,
+			};
+		}
+
+		const status = await publisher.getPublishStatus();
+		const files = [...status.unpublished, ...status.changed];
+		const publishPaths = files.map((file) => file.getVaultPath());
+
+		if (params.flags.has("dry-run")) {
+			return {
+				success: true,
+				data: {
+					files: publishPaths,
+				},
+			};
+		}
+		const commitMessage =
+			params.args.message ?? "Published via Quartz Syncer CLI";
+		const result = await publisher.publishBatch(files, commitMessage);
+
+		if (!result.success) {
+			return {
+				success: false,
+				error: result.error ?? "Publish failed",
+			};
+		}
+
+		return {
+			success: true,
+			data: {
+				...result,
+				...(params.verbose ? { files: publishPaths } : {}),
+			},
+		};
+	};
 }

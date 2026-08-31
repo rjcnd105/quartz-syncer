@@ -1,5 +1,4 @@
 import { Component, Notice } from "obsidian";
-import Logger from "js-logger";
 import {
 	PluginIntegration,
 	PatternDescriptor,
@@ -7,7 +6,8 @@ import {
 	CompileContext,
 } from "./types";
 import { isPluginEnabled, renderPromise } from "src/utils/utils";
-import { FANTASY_STATBLOCKS_PLUGIN_ID } from "src/ui/suggest/constants";
+
+const FANTASY_STATBLOCKS_PLUGIN_ID = "fantasy-statblocks";
 
 const fantasyStatblocksScss = `
 // Quartz fixes
@@ -432,14 +432,14 @@ async function tryRenderStatblock(
 	filePath: string,
 	api: FantasyStatblocksApi,
 ): Promise<HTMLDivElement> {
-	const div = activeDocument.createElement("div");
+	const div = createDiv();
 	const component = new Component();
 	component.load();
 
 	try {
 		void api.renderMarkdown(query, div, filePath, component);
 	} catch (error) {
-		Logger.error(error);
+		console.debug(error);
 
 		new Notice(
 			`Quartz Syncer: Fantasy Statblocks execution error: ${String(
@@ -528,7 +528,7 @@ export const FantasyStatblocksIntegration: PluginIntegration = {
 				"",
 			);
 		} catch (error) {
-			Logger.error(error);
+			console.debug(error);
 
 			return match.fullMatch;
 		}

@@ -1,6 +1,4 @@
 import { Component, Notice, htmlToMarkdown } from "obsidian";
-import { DataviewApi, getAPI } from "obsidian-dataview";
-import Logger from "js-logger";
 import {
 	PluginIntegration,
 	PatternDescriptor,
@@ -14,17 +12,16 @@ import {
 	surroundWithCalloutBlock,
 	sanitizeQuery,
 } from "src/utils/utils";
-
-function getDataviewApi(): ReturnType<typeof getAPI> {
-	return getAPI();
-}
+import {
+	type DataviewApi,
+	getDataviewApi,
+} from "src/compiler/integrations/apis/dataview";
 
 function tryDVEvaluate(
 	query: string,
 	filePath: string,
 	dvApi: DataviewApi,
 ): string | undefined | null {
-	/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Dataview API returns untyped values */
 	let result = "";
 
 	try {
@@ -33,10 +30,9 @@ function tryDVEvaluate(
 		});
 		result = dataviewResult?.toString() ?? "";
 	} catch (e) {
-		Logger.warn("dvapi.tryEvaluate did not yield any result", e);
+		console.debug("dvapi.tryEvaluate did not yield any result", e);
 	}
 
-	/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- end Dataview evaluation block */
 	return result;
 }
 
@@ -44,18 +40,22 @@ async function tryExecuteJs(
 	query: string,
 	filePath: string,
 	dvApi: DataviewApi,
-) {
-	/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Dataview API returns untyped values */
-	const div = activeDocument.createElement("div");
+): Promise<string> {
+	const div = createDiv();
 	const component = new Component();
 	component.load();
 	await dvApi.executeJs(query, div, component, filePath);
 
-	await renderPromise(div, "[data-tag-name]");
+	try {
+		await renderPromise(div, "[data-tag-name]");
+	} catch {
+		// Timeout is non-fatal: the view may render without observable
+		// DOM mutations (e.g. dv.view loading external JS files).
+		// Proceed with whatever HTML exists in the container.
+	}
 
 	const markdown = htmlToMarkdown(div) || "";
 
-	/* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- end Dataview executeJs block */
 	return cleanQueryResult(markdown);
 }
 
@@ -73,7 +73,6 @@ export const DataviewIntegration: PluginIntegration = {
 	},
 
 	getPatterns(): PatternDescriptor[] {
-		/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument -- Dataview API returns untyped values */
 		const dvApi = getDataviewApi();
 
 		const patterns: PatternDescriptor[] = [
@@ -117,7 +116,6 @@ export const DataviewIntegration: PluginIntegration = {
 			);
 		}
 
-		/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument -- end Dataview settings access */
 		return patterns;
 	},
 
@@ -125,13 +123,13 @@ export const DataviewIntegration: PluginIntegration = {
 		match: PatternMatch,
 		context: CompileContext,
 	): Promise<string> {
-		/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument -- Dataview API returns untyped values */
 		const dvApi = getDataviewApi();
 
 		if (!dvApi) return match.fullMatch;
 
 		const filePath = context.file.getPath();
-		const query = match.captures[0];
+		const query = match.captures[0] ?? "";
+		if (!query) return match.fullMatch;
 		const { isInsideCalloutDepth, finalQuery } = sanitizeQuery(query);
 
 		try {
@@ -180,14 +178,13 @@ export const DataviewIntegration: PluginIntegration = {
 					return match.fullMatch;
 			}
 		} catch (e) {
-			Logger.error(e);
+			console.debug(e);
 
 			new Notice(
-				"Quartz Syncer: Unable to render dataview query. Please update the dataview plugin to the latest version.",
+				"Quartz Syncer: Unable to render Dataview query. Please update the Dataview plugin to the latest version.",
 			);
 
 			return match.fullMatch;
 		}
-		/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument -- end Dataview compile block */
 	},
 };
